@@ -1,66 +1,61 @@
-﻿using Azure.Messaging.ServiceBus;
+﻿using Azure;
+using Azure.Communication.Email;
+using Microsoft.AspNetCore.Mvc.Formatters.Xml;
+using Microsoft.Extensions.Caching.Memory;
 using Newtonsoft.Json;
+using System.Diagnostics;
+using System.Net.Mail;
 using WebApi.Models;
 
 namespace WebApi.Services;
 
-public class VerificationService
+public interface IVerificationService
 {
-    private readonly IConfiguration _configuration;
-    private readonly ServiceBusClient _client;
-    private readonly ServiceBusSender _sender;
+    Task<VerificationServiceResult> SendVerificationCodeAsync(SendVerificationRequest request);
+    void SaveVerificationCode(SaveVerificationCodeRequest request);
+    VerificationServiceResult VerifyVerificationCode(VerifyVerificationCodeRequest request);
+}
+
+public class VerificationService(IConfiguration configuration, EmailClient emailClient, IMemoryCache memoryCache) : IVerificationService
+{
+
+    private readonly IConfiguration _configuration = configuration;
+    private readonly EmailClient _emailClient = emailClient;
+    private readonly IMemoryCache _cache = memoryCache;
     private static readonly Random _random = new();
 
-    public VerificationService(IConfiguration configuration, ServiceBusClient client)
-    {
-        _configuration = configuration;
-        _client = client;
-
-        _sender = _client.CreateSender(_configuration["ASB:QueueName"]);
-    }
-
-    public async Task<bool> SendVerificationCodeAsync(SendVerificationRequest request)
+    public async Task<VerificationServiceResult> SendVerificationCodeAsync(SendVerificationRequest request)
     {
         try
         {
-            var emailMessage = GenerateVerficationEmailMessage(request);
-            var message = new ServiceBusMessage(emailMessage);
+            if (request == null || string.IsNullOrWhiteSpace(request.Email))
+                return new VerificationServiceResult { Succeeded = false, Error = "Email address is required" };
 
-            await _sender.SendMessageAsync(message);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
+            var verificationCode = _random.Next(100000, 999999).ToString();
+            var subject = $"Your verification code is {verificationCode}";
+            var plaintTextContent = @$"
+            Verify your Email Address
 
-    public string GenerateVerficationEmailMessage(SendVerificationRequest request)
-    {
-        var verificationCode = _random.Next(100000, 999999).ToString();
-        var subject = $"Your code is {verificationCode}";
-        var plainText = $@"
-            Verify Your Email Address
-
-            Hello,
+            Hello Elias,
 
             To complete your verification, please enter the following code:
 
             {verificationCode}
 
-            Alternatively, you can open the verification page using the following link:
-            https://domain.com/verify?email={request.Email}&token=
+            Or use the following link:
+            https://ventixe.com/verify?email={request.Email}&token=
+            
+            If you did not initiate this request, please ignore this email.
+            Thank you,
 
-            If you did not initiate this request, you can safely disregard this email.
-            We take your privacy seriously. No further action is required if you did not initiate this request.
 
-            Privacy Policy:
-            https://domain.com/privacy-policy
+            Privacy Policy
+            https://ventixe.com/privacy-policy
 
-            © domain.com. All rights reserved.
+
+            © ventixe.com 2025. All rights reserved.
             ";
-
-        var html = $@"
+            var htmlContent = $@"
             <!DOCTYPE html>
             <html lang='en'>
             <head>
@@ -99,23 +94,66 @@ public class VerificationService
                 </p>
 
                 <div style='font-size:12px; color:#777779; text-align:center; margin-top:24px;'>
-                  © domain.com. All rights reserved.
+                  © ventixe.com. All rights reserved.
                 </div>
 
               </div>
             </body>
             </html>
-        ";
 
-        var message = new EmailSendRequest
+        
+            ";
+
+            var emailMessage = new EmailMessage(
+                senderAddress: _configuration["ACS:SenderAddress"],
+                recipients: new EmailRecipients([new(request.Email)]),
+                content: new EmailContent(subject)
+                {
+                    PlainText = plaintTextContent,
+                    Html = htmlContent
+                });
+
+            var emailSendOperation = await _emailClient.SendAsync(WaitUntil.Started, emailMessage);
+            SaveVerificationCode(new SaveVerificationCodeRequest
+            {
+                Email = request.Email,
+                Code = verificationCode,
+                ValidFor = TimeSpan.FromMinutes(5)
+            });
+
+            return new VerificationServiceResult { Succeeded = true, Message = "Verification email sent successfully" };
+        }
+        catch (Exception ex)
         {
-            Recipients = [request.Email],
-            Subject = subject,
-            PlainText = plainText,
-            Html = html,
-        };
+            Debug.WriteLine(ex);
+            return new VerificationServiceResult { Succeeded = false, Error = ex.Message };
 
-        var json = JsonConvert.SerializeObject(message);
-        return json;
+        }
+
+
     }
-}
+
+    public void SaveVerificationCode(SaveVerificationCodeRequest request)
+    {
+        _cache.Set(request.Email.ToLowerInvariant(), request.Code, request.ValidFor);
+    }
+
+    public VerificationServiceResult VerifyVerificationCode(VerifyVerificationCodeRequest request)
+    {
+        var key = request.Email.ToLowerInvariant();
+
+        if (_cache.TryGetValue(key, out string? storedCode))
+        {
+            if (storedCode == request.Code)
+            {
+                _cache.Remove(key);
+                return new VerificationServiceResult { Succeeded = true, Message = "Verification successful." };
+            }
+
+        }
+        return new VerificationServiceResult { Succeeded = false, Error = "Invalid or expired verification code." };
+
+    }
+};
+
+

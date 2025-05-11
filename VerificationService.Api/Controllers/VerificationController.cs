@@ -7,9 +7,10 @@ namespace WebApi.Controllers;
 
 [Route("api/verification")]
 [ApiController]
-public class VerificationController(VerificationService verificationService) : ControllerBase
+public class VerificationController(IVerificationService verificationService) : ControllerBase
 {
-    private readonly VerificationService _verificationService = verificationService;
+    private readonly IVerificationService _verificationService = verificationService;
+
 
     [HttpPost("send")]
     public async Task<IActionResult> Send(SendVerificationRequest request)
@@ -18,13 +19,21 @@ public class VerificationController(VerificationService verificationService) : C
             return BadRequest(new { Error = "Recipient email address is required." });
 
         var result = await _verificationService.SendVerificationCodeAsync(request);
-        return result ? Ok() : StatusCode(500, "Unable to send verification code.");
+        return result.Succeeded
+            ? Ok(result)
+            : StatusCode(500, result);
     }
 
-    //[HttpPost("verify")]
-    //public IActionResult Verify(VerifyVerificationRequest request)
-    //{
-    //    if (!ModelState.IsValid)
-    //        return BadRequest(new { Error = "Invalid or expired verification code." });
-    //}
+    [HttpPost("verify")]
+    public IActionResult Verify(VerifyVerificationCodeRequest request)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(new { Error = "Invalid or expired verification code." });
+
+        var result = _verificationService.VerifyVerificationCode(request);
+        return result.Succeeded
+          ? Ok(result)
+          : StatusCode(500, result);
+
+    }
 }
