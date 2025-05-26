@@ -118,7 +118,7 @@ public class VerificationService(IConfiguration configuration, EmailClient email
             {
                 Email = request.Email,
                 Code = verificationCode,
-                ValidFor = TimeSpan.FromMinutes(5)
+                ValidFor = TimeSpan.FromMinutes(10)
             });
 
             return new VerificationServiceResult { Succeeded = true, Message = "Verification email sent successfully" };
