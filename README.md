@@ -50,14 +50,14 @@ Detta är ett C#-projekt som tillhandahåller en API-tjänst för verifiering, u
 - .NET 6.0+
 - Eventuella externa bibliotek definieras i `WebApi.csproj`.
 
-## Bidra
+## Publicering
 
-Bidrag är välkomna! Skapa gärna en issue eller PR för att diskutera förändringar eller nya funktioner.
+VerificationServiceProvider är publicerad på Azure:
 
-## Licens
-
-Specificera licens här om sådan finns (t.ex. MIT, GPL, etc).
+🔗 https://verificatioservice-hcecd5avgddveufy.swedencentral-01.azurewebsites.net
 
 ---
 
-> Denna README är auto-genererad utifrån repo-strukturen. Lägg gärna till mer information om projektets syfte, användningsexempel eller tekniska detaljer!
+## Författare
+
+Utvecklad av Elias Grafström
